@@ -7,6 +7,6 @@ require (
 	github.com/gorilla/mux v1.8.0
 )
 
-require github.com/MrMelon54/trie v0.0.2 // indirect
+require github.com/julienschmidt/httprouter v1.3.0 // indirect
 
 replace github.com/MrMelon54/violet => ../

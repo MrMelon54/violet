@@ -17,18 +17,19 @@ func benchRequest(b *testing.B, router http.Handler, r *http.Request) {
 		router.ServeHTTP(w, r)
 	}
 	if w.Header().Get("Location") != "https://example.com" {
+		b.Logf("%#v\n", w)
 		b.Fatal("Location: ", w.Header().Get("Location"), " != https://example.com")
 	}
 }
 
-func BenchmarkVioletRouter(b *testing.B) {
+func BenchmarkVioletRouterFast(b *testing.B) {
 	r := router.New()
 	r.AddRedirect("*.example.com", "", target.Redirect{
 		Pre:  true,
 		Host: "example.com",
 		Code: http.StatusPermanentRedirect,
 	})
-	benchRequest(b, r, httptest.NewRequest(http.MethodGet, "https://www.example.com", nil))
+	benchRequest(b, r, httptest.NewRequest(http.MethodGet, "https://www.example.com/", nil))
 }
 
 func BenchmarkGorillaMux(b *testing.B) {

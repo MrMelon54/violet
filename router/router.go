@@ -2,58 +2,64 @@ package router
 
 import (
 	"fmt"
-	"github.com/MrMelon54/trie"
 	"github.com/MrMelon54/violet/target"
+	"github.com/julienschmidt/httprouter"
 	"net/http"
 	"net/http/httputil"
 	"strings"
 )
 
 type Router struct {
-	route    map[string]*trie.Trie[target.Route]
-	redirect map[string]*trie.Trie[target.Redirect]
+	route    map[string]*httprouter.Router
+	redirect map[string]*httprouter.Router
 	notFound http.Handler
 	proxy    *httputil.ReverseProxy
 }
 
 func New() *Router {
 	return &Router{
-		route:    make(map[string]*trie.Trie[target.Route]),
-		redirect: make(map[string]*trie.Trie[target.Redirect]),
+		route:    make(map[string]*httprouter.Router),
+		redirect: make(map[string]*httprouter.Router),
 		notFound: http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 			_, _ = fmt.Fprintf(rw, "%d %s\n", http.StatusNotFound, http.StatusText(http.StatusNotFound))
 		}),
 	}
 }
 
-func (r *Router) hostRoute(host string) *trie.Trie[target.Route] {
+func (r *Router) hostRoute(host string) *httprouter.Router {
 	h := r.route[host]
 	if h == nil {
-		h = &trie.Trie[target.Route]{}
+		h = httprouter.New()
 		r.route[host] = h
 	}
 	return h
 }
 
-func (r *Router) hostRedirect(host string) *trie.Trie[target.Redirect] {
+func (r *Router) hostRedirect(host string) *httprouter.Router {
 	h := r.redirect[host]
 	if h == nil {
-		h = &trie.Trie[target.Redirect]{}
+		h = httprouter.New()
 		r.redirect[host] = h
 	}
 	return h
 }
 
 func (r *Router) AddService(host string, t target.Route) {
-	r.AddRoute(host, "", t)
+	r.AddRoute(host, "/", t)
 }
 
 func (r *Router) AddRoute(host string, path string, t target.Route) {
-	r.hostRoute(host).PutString(path, t)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	r.hostRoute(host).Handler(http.MethodGet, path, t)
 }
 
 func (r *Router) AddRedirect(host, path string, t target.Redirect) {
-	r.hostRedirect(host).PutString(path, t)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	r.hostRedirect(host).Handler(http.MethodGet, path, t)
 }
 
 func (r *Router) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
@@ -84,13 +90,10 @@ func (r *Router) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 func (r *Router) serveRouteHTTP(rw http.ResponseWriter, req *http.Request, host string) bool {
 	h := r.route[host]
 	if h != nil {
-		pairs := h.GetAllKeyValues([]byte(req.URL.Path))
-		for i := len(pairs) - 1; i >= 0; i-- {
-			if pairs[i].Value.Pre || pairs[i].Key == req.URL.Path {
-				req.URL.Path = strings.TrimPrefix(req.URL.Path, pairs[i].Key)
-				pairs[i].Value.ServeHTTP(rw, req)
-				return true
-			}
+		lookup, params, _ := h.Lookup(req.Method, req.URL.Path)
+		if lookup != nil {
+			lookup(rw, req, params)
+			return true
 		}
 	}
 	return false
@@ -99,13 +102,10 @@ func (r *Router) serveRouteHTTP(rw http.ResponseWriter, req *http.Request, host 
 func (r *Router) serveRedirectHTTP(rw http.ResponseWriter, req *http.Request, host string) bool {
 	h := r.redirect[host]
 	if h != nil {
-		pairs := h.GetAllKeyValues([]byte(req.URL.Path))
-		for i := len(pairs) - 1; i >= 0; i-- {
-			if pairs[i].Value.Pre || pairs[i].Key == req.URL.Path {
-				req.URL.Path = strings.TrimPrefix(req.URL.Path, pairs[i].Key)
-				pairs[i].Value.ServeHTTP(rw, req)
-				return true
-			}
+		lookup, params, _ := h.Lookup(req.Method, req.URL.Path)
+		if lookup != nil {
+			lookup(rw, req, params)
+			return true
 		}
 	}
 	return false
